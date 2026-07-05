@@ -2,48 +2,24 @@
   TinyEXIF.cpp -- A simple ISO C++ library to parse basic EXIF and XMP
                   information from a JPEG file.
 
-  Copyright (c) 2015-2017 Seacave
+  Copyright (c) 2015-2025 Seacave
   cdc.seacave@gmail.com
-  All rights reserved.
-
-  Based on the easyexif library (2013 version)
-    https://github.com/mayanklahiri/easyexif
-  of Mayank Lahiri (mlahiri@gmail.com).
-  
-  Redistribution and use in source and binary forms, with or without 
-  modification, are permitted provided that the following conditions are met:
-
-   - Redistributions of source code must retain the above copyright notice, 
-     this list of conditions and the following disclaimer.
-   - Redistributions in binary form must reproduce the above copyright notice, 
-     this list of conditions and the following disclaimer in the documentation 
-   and/or other materials provided with the distribution.
-
-  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY EXPRESS 
-  OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES 
-  OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN 
-  NO EVENT SHALL THE FREEBSD PROJECT OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, 
-  INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, 
-  BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, 
-  DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY 
-  OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING 
-  NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, 
-  EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+  MIT License
 */
 
 #include "TinyEXIF.h"
-
-#ifndef TINYEXIF_NO_XMP_SUPPORT
-#include <tinyxml2.h>
-#endif // TINYEXIF_NO_XMP_SUPPORT
-
-#include <cstdint>
+#include <cstddef>
 #include <cstdio>
 #include <cmath>
 #include <cfloat>
 #include <vector>
 #include <algorithm>
 #include <iostream>
+#include <sstream>
+
+#ifndef TINYEXIF_NO_XMP_SUPPORT
+#include <tinyxml2.h>
+#endif // TINYEXIF_NO_XMP_SUPPORT
 
 #ifdef _MSC_VER
 namespace {
@@ -229,7 +205,10 @@ public:
 	bool Fetch(uint16_t& val, uint32_t idx) const {
 		if (!IsShort() || length <= idx)
 			return false;
-		val = parse16(buf + GetSubIFD() + idx*2, alignIntel);
+		const uint32_t offset = GetSubIFD() + idx*2;
+		if (offset + 2 > len)
+			return false;
+		val = parse16(buf + offset, alignIntel);
 		return true;
 	}
 	bool Fetch(uint32_t& val) const {
@@ -253,7 +232,10 @@ public:
 	bool Fetch(double& val, uint32_t idx) const {
 		if (!IsRational() || length <= idx)
 			return false;
-		val = parseRational(buf + GetSubIFD() + idx*8, alignIntel, IsSRational());
+		const uint32_t offset = GetSubIFD() + idx*8;
+		if (offset + 8 > len)
+			return false;
+		val = parseRational(buf + offset, alignIntel, IsSRational());
 		return true;
 	}
 
@@ -319,7 +301,7 @@ public:
 			if (value[num_components-1] == '\0')
 				value.resize(num_components-1);
 		} else
-		if (base+data+num_components <= len) {
+		if ((uint64_t)base+data+num_components <= (uint64_t)len) {
 			const char* const sz((const char*)buf+base+data);
 			unsigned num(0);
 			while (num < num_components && sz[num] != '\0')
@@ -943,12 +925,14 @@ int EXIFInfo::parseFromEXIFSegment(const uint8_t* buf, unsigned len) {
 	//  8 bytes
 	if (offs + 8 > len)
 		return PARSE_CORRUPT_DATA;
+	const uint32_t _ONE32 = 1;
+	const bool IS_LITTLE_ENDIAN = reinterpret_cast<uint8_t const*>(&_ONE32)[0] == 1;
 	bool alignIntel;
 	if (buf[offs] == 'I' && buf[offs+1] == 'I')
-		alignIntel = true; // 1: Intel byte alignment
+		alignIntel = IS_LITTLE_ENDIAN; // 1: Intel byte alignment
 	else
 	if (buf[offs] == 'M' && buf[offs+1] == 'M')
-		alignIntel = false; // 0: Motorola byte alignment
+		alignIntel = !IS_LITTLE_ENDIAN; // 0: Motorola byte alignment
 	else
 		return PARSE_UNKNOWN_BYTEALIGN;
 	EntryParser parser(buf, len, offs, alignIntel);
@@ -967,15 +951,17 @@ int EXIFInfo::parseFromEXIFSegment(const uint8_t* buf, unsigned len) {
 	// entries in the section. The last 4 bytes of the IFD contain an offset
 	// to the next IFD, which means this IFD must contain exactly 6 + 12 * num
 	// bytes of data.
+	// Note that it's possible that the next IFD offset doesn't exist,
+	// so here the last 4 bytes are considered optional.
 	if (offs + 2 > len)
 		return PARSE_CORRUPT_DATA;
-	int num_entries = EntryParser::parse16(buf + offs, alignIntel);
-	if (offs + 6 + 12 * num_entries > len)
+	unsigned num_entries = EntryParser::parse16(buf + offs, alignIntel);
+	if (offs + 2 + 12 * num_entries > len)
 		return PARSE_CORRUPT_DATA;
 	unsigned exif_sub_ifd_offset = len;
 	unsigned gps_sub_ifd_offset  = len;
 	parser.Init(offs+2);
-	while (--num_entries >= 0) {
+	while (num_entries-- > 0) {
 		parser.ParseTag();
 		parseIFDImage(parser, exif_sub_ifd_offset, gps_sub_ifd_offset);
 	}
@@ -987,10 +973,10 @@ int EXIFInfo::parseFromEXIFSegment(const uint8_t* buf, unsigned len) {
 	if (exif_sub_ifd_offset + 4 <= len) {
 		offs = exif_sub_ifd_offset;
 		num_entries = EntryParser::parse16(buf + offs, alignIntel);
-		if (offs + 6 + 12 * num_entries > len)
+		if (offs + 2 + 12 * num_entries > len)
 			return PARSE_CORRUPT_DATA;
 		parser.Init(offs+2);
-		while (--num_entries >= 0) {
+		while (num_entries-- > 0) {
 			parser.ParseTag();
 			parseIFDExif(parser);
 		}
@@ -1001,10 +987,10 @@ int EXIFInfo::parseFromEXIFSegment(const uint8_t* buf, unsigned len) {
 	if (gps_sub_ifd_offset + 4 <= len) {
 		offs = gps_sub_ifd_offset;
 		num_entries = EntryParser::parse16(buf + offs, alignIntel);
-		if (offs + 6 + 12 * num_entries > len)
+		if (offs + 2 + 12 * num_entries > len)
 			return PARSE_CORRUPT_DATA;
 		parser.Init(offs+2);
-		while (--num_entries >= 0) {
+		while (num_entries-- > 0) {
 			parser.ParseTag();
 			parseIFDGPS(parser);
 		}
@@ -1112,8 +1098,19 @@ int EXIFInfo::parseFromXMPSegmentXML(const char* szXML, unsigned len) {
 				if (element == NULL || (szAttribute = element->GetText()) == NULL)
 					return false;
 			}
-			value = strtoul(szAttribute, NULL, 0); return true;
-			return false;
+			value = strtoul(szAttribute, NULL, 0);
+			return true;
+		}
+		// same as previous function but with std::string
+		static bool Value(const tinyxml2::XMLElement* document, const char* name, std::string& value) {
+			const char* szAttribute = document->Attribute(name);
+			if (szAttribute == NULL) {
+				const tinyxml2::XMLElement* const element(document->FirstChildElement(name));
+				if (element == NULL || (szAttribute = element->GetText()) == NULL)
+					return false;
+			}
+			value = std::string(szAttribute);
+			return true;
 		}
 	};
 	const char* szAbout(document->Attribute("rdf:about"));
@@ -1126,6 +1123,28 @@ int EXIFInfo::parseFromXMPSegmentXML(const char* szXML, unsigned len) {
 		ParseXMP::Value(document, "drone-dji:CalibratedFocalLength", Calibration.FocalLength);
 		ParseXMP::Value(document, "drone-dji:CalibratedOpticalCenterX", Calibration.OpticalCenterX);
 		ParseXMP::Value(document, "drone-dji:CalibratedOpticalCenterY", Calibration.OpticalCenterY);
+		std::string dewarpData;
+		ParseXMP::Value(document, "drone-dji:DewarpFlag", Distortion.DewarpFlag);
+		ParseXMP::Value(document, "drone-dji:DewarpData", dewarpData);
+		std::vector<double> distortionParams;
+		size_t pos = dewarpData.find(';');
+		if (pos != std::string::npos) {
+			std::stringstream ss(dewarpData.substr(pos + 1));
+			std::string item;
+			while (std::getline(ss, item, ',')) {
+				distortionParams.push_back(std::stod(item));
+			}
+		}
+		// The DewarpData string has the following format:
+		// date;Fx,Fy,Cx,Cy,K1,K2,P1,P2,K3
+		// , where Fx, Fy are focal lengths in pixels, Cx, Cy are optical center offsets from the image center in pixels
+		if (distortionParams.size() == 9) {
+			Distortion.K1 = distortionParams[4];
+			Distortion.K2 = distortionParams[5];
+			Distortion.P1 = distortionParams[6];
+			Distortion.P2 = distortionParams[7];
+			Distortion.K3 = distortionParams[8];
+		}
 	} else
 	if (0 == strcasecmp(Make.c_str(), "senseFly") || 0 == strcasecmp(Make.c_str(), "Sentera")) {
 		ParseXMP::Value(document, "Camera:Roll", GeoLocation.RollDegree);
@@ -1185,6 +1204,17 @@ int EXIFInfo::parseFromXMPSegmentXML(const char* szXML, unsigned len) {
 
 #endif // TINYEXIF_NO_XMP_SUPPORT
 
+bool EXIFInfo::Calibration_t::hasCalibration() const {
+	return FocalLength > 0.0 && OpticalCenterX > 0.0 && OpticalCenterY > 0.0;
+}
+
+bool EXIFInfo::Distortion_t::hasDewarpFlag() const {
+	return DewarpFlag != UINT32_MAX;
+}
+bool EXIFInfo::Distortion_t::hasDistortion() const {
+	return K1 != 0.0 || K2 != 0.0 || P1 != 0.0 || P2 != 0.0 || K3 != 0.0;
+}
+
 void EXIFInfo::Geolocation_t::parseCoords() {
 	// Convert GPS latitude
 	if (LatComponents.degrees != DBL_MAX ||
@@ -1229,6 +1259,9 @@ bool EXIFInfo::Geolocation_t::hasOrientation() const {
 }
 bool EXIFInfo::Geolocation_t::hasSpeed() const {
 	return SpeedX != DBL_MAX && SpeedY != DBL_MAX && SpeedZ != DBL_MAX;
+}
+bool EXIFInfo::Geolocation_t::hasAccuracy() const {
+	return AccuracyXY != 0 && AccuracyZ != 0;
 }
 
 bool EXIFInfo::GPano_t::hasPosePitchDegrees() const {
@@ -1325,6 +1358,14 @@ void EXIFInfo::clear() {
 	GeoLocation.LonComponents.minutes   = 0;
 	GeoLocation.LonComponents.seconds   = 0;
 	GeoLocation.LonComponents.direction = 0;
+
+	// Distortion
+	Distortion.DewarpFlag = UINT32_MAX;
+	Distortion.K1 = 0;
+	Distortion.K2 = 0;
+	Distortion.P1 = 0;
+	Distortion.P2 = 0;
+	Distortion.K3 = 0;
 
 	// GPano
 	GPano.PosePitchDegrees = DBL_MAX;

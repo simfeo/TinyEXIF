@@ -2,44 +2,21 @@
   TinyEXIF.h -- A simple ISO C++ library to parse basic EXIF and XMP
                 information from a JPEG file.
 
-  Copyright (c) 2015-2017 Seacave
+  Copyright (c) 2015-2025 Seacave
   cdc.seacave@gmail.com
-  All rights reserved.
-
-  Based on the easyexif library (2013 version)
-    https://github.com/mayanklahiri/easyexif
-  of Mayank Lahiri (mlahiri@gmail.com).
-  
-  Redistribution and use in source and binary forms, with or without 
-  modification, are permitted provided that the following conditions are met:
-
-   - Redistributions of source code must retain the above copyright notice, 
-     this list of conditions and the following disclaimer.
-   - Redistributions in binary form must reproduce the above copyright notice, 
-     this list of conditions and the following disclaimer in the documentation 
-   and/or other materials provided with the distribution.
-
-  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY EXPRESS 
-  OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES 
-  OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN 
-  NO EVENT SHALL THE FREEBSD PROJECT OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, 
-  INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, 
-  BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, 
-  DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY 
-  OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING 
-  NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, 
-  EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+  MIT License
 */
 
 #ifndef __TINYEXIF_H__
 #define __TINYEXIF_H__
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
 #define TINYEXIF_MAJOR_VERSION 1
 #define TINYEXIF_MINOR_VERSION 0
-#define TINYEXIF_PATCH_VERSION 1
+#define TINYEXIF_PATCH_VERSION 3
 
 #ifdef _MSC_VER
 #   ifdef TINYEXIF_EXPORT
@@ -250,7 +227,21 @@ public:
 		double FocalLength;             // Focal length (pixels)
 		double OpticalCenterX;          // Principal point X (pixels)
 		double OpticalCenterY;          // Principal point Y (pixels)
+		bool hasCalibration() const;    // Return true if FocalLength, OpticalCenterX, OpticalCenterY are available (nonzero)
 	} Calibration;
+	struct TINYEXIF_LIB Distortion_t { // Lens distortion information
+		uint32_t DewarpFlag;            // Dewarp flag - indicates whether undistortion has been applied to the image
+										// UINT32_MAX: flag missing from EXIF data
+										// 0: no dewarp (raw image) - the image is distorted, should also have coefficients
+										// 1: dewarp applied (undistorted image)
+		double K1;
+		double K2;
+		double P1;
+		double P2;
+		double K3;
+		bool hasDewarpFlag() const; // Return true if DewarpFlag is available
+		bool hasDistortion() const; // Return true if any of K1, K2, P1, P2, K3 are available
+	} Distortion;
 	struct TINYEXIF_LIB LensInfo_t {    // Lens information
 		double FStopMin;                // Min aperture (f-stop)
 		double FStopMax;                // Max aperture (f-stop)
@@ -301,14 +292,15 @@ public:
 		bool hasRelativeAltitude()const;// Return true if (rel_alt) is available
 		bool hasOrientation() const;    // Return true if (roll,yaw,pitch) is available
 		bool hasSpeed() const;          // Return true if (speedX,speedY,speedZ) is available
+		bool hasAccuracy() const;       // Return true if (accuracyXY,accuracyZ) is available
 	} GeoLocation;
-	struct TINYEXIF_LIB GPano_t {           // Spherical metadata. https://developers.google.com/streetview/spherical-metadata
+	struct TINYEXIF_LIB GPano_t {       // Spherical metadata. https://developers.google.com/streetview/spherical-metadata
 		double PosePitchDegrees;        // Pitch, measured in degrees above the horizon, for the center in the image. Value must be >= -90 and <= 90.
 		double PoseRollDegrees;         // Roll, measured in degrees, of the image where level with the horizon is 0. As roll increases, the horizon rotates counterclockwise in the image. Value must be > -180 and <= 180.
 		bool hasPosePitchDegrees() const; // Return true if PosePitchDegrees is available
 		bool hasPoseRollDegrees() const; // Return true if PoseRollDegrees is available
 	} GPano;
-	struct TINYEXIF_LIB MicroVideo_t {      // Google camera video file in metadata
+	struct TINYEXIF_LIB MicroVideo_t {  // Google camera video file in metadata
 		uint32_t HasMicroVideo;         // not zero if exists
 		uint32_t MicroVideoVersion;     // just regularinfo
 		uint32_t MicroVideoOffset;      // offset from end of file
