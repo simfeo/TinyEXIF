@@ -1152,11 +1152,33 @@ int EXIFInfo::parseFromXMPSegmentXML(const char* szXML, unsigned len) {
 	ParseXMP::Value(document, "GPano:PosePitchDegrees", GPano.PosePitchDegrees);
 	ParseXMP::Value(document, "GPano:PoseRollDegrees", GPano.PoseRollDegrees);
 
-	// parse GCamera:MicroVideo
+	// parse GCamera:MicroVideo (legacy Google motion photo format)
 	if (document->Attribute("GCamera:MicroVideo")) {
 		ParseXMP::Value(document, "GCamera:MicroVideo", MicroVideo.HasMicroVideo);
 		ParseXMP::Value(document, "GCamera:MicroVideoVersion", MicroVideo.MicroVideoVersion);
 		ParseXMP::Value(document, "GCamera:MicroVideoOffset", MicroVideo.MicroVideoOffset);
+	}
+	// parse GCamera:MotionPhoto (newer Google/Samsung motion photo container format).
+	// The trailing video is described by a Container:Directory of items; locate the
+	// video item and use its Item:Length as the trailing-video size (stored, like the
+	// legacy MicroVideoOffset, as a byte count measured from the end of the file).
+	else if (document->Attribute("GCamera:MotionPhoto")) {
+		ParseXMP::Value(document, "GCamera:MotionPhoto", MicroVideo.HasMicroVideo);
+		ParseXMP::Value(document, "GCamera:MotionPhotoVersion", MicroVideo.MicroVideoVersion);
+
+		const tinyxml2::XMLElement* dir = document->FirstChildElement("Container:Directory");
+		const tinyxml2::XMLElement* seq = dir ? dir->FirstChildElement("rdf:Seq") : nullptr;
+		for (const tinyxml2::XMLElement* li = seq ? seq->FirstChildElement("rdf:li") : nullptr;
+		     li != nullptr; li = li->NextSiblingElement("rdf:li")) {
+			const tinyxml2::XMLElement* item = li->FirstChildElement("Container:Item");
+			if (item == nullptr)
+				continue;
+			const char* mime = item->Attribute("Item:Mime");
+			if (mime != nullptr && strstr(mime, "video") != nullptr) {
+				ParseXMP::Value(item, "Item:Length", MicroVideo.MicroVideoOffset);
+				break;
+			}
+		}
 	}
 	return PARSE_SUCCESS;
 }
