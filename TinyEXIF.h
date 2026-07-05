@@ -297,8 +297,17 @@ public:
 	struct TINYEXIF_LIB GPano_t {       // Spherical metadata. https://developers.google.com/streetview/spherical-metadata
 		double PosePitchDegrees;        // Pitch, measured in degrees above the horizon, for the center in the image. Value must be >= -90 and <= 90.
 		double PoseRollDegrees;         // Roll, measured in degrees, of the image where level with the horizon is 0. As roll increases, the horizon rotates counterclockwise in the image. Value must be > -180 and <= 180.
+		double PoseHeadingDegrees;      // Compass heading, measured in degrees, for the center the image. Value must be >= 0 and < 360.
+		std::string ProjectionType;     // Projection type used in the image, e.g. "equirectangular"
+		uint32_t CroppedAreaImageWidthPixels;  // Width, in pixels, of the image this metadata is stored in
+		uint32_t CroppedAreaImageHeightPixels; // Height, in pixels, of the image this metadata is stored in
+		uint32_t FullPanoWidthPixels;   // Width, in pixels, of the full panorama sphere this image is a crop of
+		uint32_t FullPanoHeightPixels;  // Height, in pixels, of the full panorama sphere this image is a crop of
+		uint32_t CroppedAreaLeftPixels; // Column, in the full pano, where the left edge of this image lies
+		uint32_t CroppedAreaTopPixels;  // Row, in the full pano, where the top edge of this image lies
 		bool hasPosePitchDegrees() const; // Return true if PosePitchDegrees is available
 		bool hasPoseRollDegrees() const; // Return true if PoseRollDegrees is available
+		bool isEquirectangular() const;   // Return true for spherical/equirectangular panoramas
 	} GPano;
 	struct TINYEXIF_LIB MicroVideo_t {  // Google camera video file in metadata
 		uint32_t HasMicroVideo;         // not zero if exists

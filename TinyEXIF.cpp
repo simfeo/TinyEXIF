@@ -1170,6 +1170,14 @@ int EXIFInfo::parseFromXMPSegmentXML(const char* szXML, unsigned len) {
 	}
 	ParseXMP::Value(document, "GPano:PosePitchDegrees", GPano.PosePitchDegrees);
 	ParseXMP::Value(document, "GPano:PoseRollDegrees", GPano.PoseRollDegrees);
+	ParseXMP::Value(document, "GPano:PoseHeadingDegrees", GPano.PoseHeadingDegrees);
+	ParseXMP::Value(document, "GPano:ProjectionType", GPano.ProjectionType);
+	ParseXMP::Value(document, "GPano:CroppedAreaImageWidthPixels", GPano.CroppedAreaImageWidthPixels);
+	ParseXMP::Value(document, "GPano:CroppedAreaImageHeightPixels", GPano.CroppedAreaImageHeightPixels);
+	ParseXMP::Value(document, "GPano:FullPanoWidthPixels", GPano.FullPanoWidthPixels);
+	ParseXMP::Value(document, "GPano:FullPanoHeightPixels", GPano.FullPanoHeightPixels);
+	ParseXMP::Value(document, "GPano:CroppedAreaLeftPixels", GPano.CroppedAreaLeftPixels);
+	ParseXMP::Value(document, "GPano:CroppedAreaTopPixels", GPano.CroppedAreaTopPixels);
 
 	// parse GCamera:MicroVideo (legacy Google motion photo format)
 	if (document->Attribute("GCamera:MicroVideo")) {
@@ -1272,6 +1280,11 @@ bool EXIFInfo::GPano_t::hasPoseRollDegrees() const {
 	return PoseRollDegrees != DBL_MAX;
 }
 
+bool EXIFInfo::GPano_t::isEquirectangular() const {
+	return 0 == strcasecmp(ProjectionType.c_str(), "equirectangular") ||
+	       0 == strcasecmp(ProjectionType.c_str(), "spherical");
+}
+
 void EXIFInfo::clear() {
 	Fields = FIELD_NA;
 
@@ -1370,6 +1383,14 @@ void EXIFInfo::clear() {
 	// GPano
 	GPano.PosePitchDegrees = DBL_MAX;
 	GPano.PoseRollDegrees = DBL_MAX;
+	GPano.PoseHeadingDegrees = DBL_MAX;
+	GPano.ProjectionType.clear();
+	GPano.CroppedAreaImageWidthPixels = 0;
+	GPano.CroppedAreaImageHeightPixels = 0;
+	GPano.FullPanoWidthPixels = 0;
+	GPano.FullPanoHeightPixels = 0;
+	GPano.CroppedAreaLeftPixels = 0;
+	GPano.CroppedAreaTopPixels = 0;
 
 	// Video metadata
 	MicroVideo.HasMicroVideo = 0;
